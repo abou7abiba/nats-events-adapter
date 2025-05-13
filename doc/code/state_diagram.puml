@@ -1,0 +1,62 @@
+@startuml
+skinparam state {
+  BackgroundColor LightBlue
+  BorderColor DarkBlue
+  FontName Arial
+}
+
+scale 1.0
+
+state "File Listener" as FileListener {
+  [*] --> Idle
+  
+  state "Idle" as Idle : Waiting for file system events
+  state "Processing Event" as Processing : Generating and publishing event
+  state "Reconnecting" as Reconnecting : Attempting to reconnect to NATS
+  
+  Idle --> Processing : File created/deleted
+  Processing --> Idle : Event published
+  Idle --> Reconnecting : Connection lost
+  Processing --> Reconnecting : Publish failed
+  Reconnecting --> Idle : Connection restored
+  Reconnecting --> [*] : Max retries exceeded
+  
+  Idle --> [*] : Shutdown requested
+}
+
+state "NATS JetStream" as NatsJetStream {
+  state "Receiving" as Receiving : Accepting published events
+  state "Storing" as Storing : Persisting events in stream
+  state "Delivering" as Delivering : Sending events to consumers
+  
+  [*] --> Receiving
+  Receiving --> Storing : Event received
+  Storing --> Delivering : Event stored
+  Delivering --> Receiving : Ready for next event
+  
+  Delivering --> [*] : Shutdown
+}
+
+state "Monitor" as Monitor {
+  [*] --> WaitingForMessages
+  
+  state "WaitingForMessages" as WaitingForMessages : Polling for new messages
+  state "ProcessingMessage" as ProcessingMessage : Processing received message
+  state "LoggingEvent" as LoggingEvent : Writing to log file
+  state "Reconnecting" as MonitorReconnecting : Attempting to reconnect to NATS
+  
+  WaitingForMessages --> ProcessingMessage : Message received
+  ProcessingMessage --> LoggingEvent : Format event
+  LoggingEvent --> WaitingForMessages : Event logged & acknowledged
+  
+  WaitingForMessages --> MonitorReconnecting : Connection lost
+  MonitorReconnecting --> WaitingForMessages : Connection restored
+  MonitorReconnecting --> [*] : Max retries exceeded
+  
+  WaitingForMessages --> [*] : Shutdown requested
+}
+
+FileListener -[hidden]-> NatsJetStream
+NatsJetStream -[hidden]-> Monitor
+
+@enduml

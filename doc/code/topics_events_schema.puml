@@ -1,0 +1,54 @@
+@startuml
+!theme plain
+skinparam backgroundColor white
+skinparam defaultFontName Arial
+skinparam arrowColor #3C7FC0
+skinparam componentBackgroundColor #F5F5F5
+skinparam componentBorderColor #666666
+skinparam noteBackgroundColor #FFFFCC
+
+rectangle "NATS JetStream Topics & Events Structure" {
+  package "Stream: FILES" as stream {
+    component "Subject: file.events" as subject #D5E8D4 {
+      note right of subject
+        Subject where all file events are published.
+        All messages on this subject are stored
+        in the FILES stream.
+      end note
+    }
+  }
+  
+  card "Event Schema" as event_schema #F8CECC {
+    note right of event_schema
+      JSON Structure:
+      {
+        "path": "file path",
+        "operation": "added" | "deleted",
+        "file_size": size in KB (0 for deleted files),
+        "timestamp": Unix timestamp
+      }
+    end note
+  }
+  
+  card "Consumer: file-monitor" as consumer #DAE8FC {
+    note right of consumer
+      Durable consumer that subscribes to file.events
+      - Delivery Policy: new
+      - Acknowledge Policy: explicit
+      - Used by the Monitor component
+    end note
+  }
+
+  rectangle "Publishers / Subscribers" as components {
+    component "File Listener (Publisher)" as publisher
+    component "Monitor (Subscriber)" as subscriber
+  }
+}
+
+publisher -up-> subject : publishes to
+subject -down-> consumer : stored in
+consumer -down-> subscriber : consumed by
+publisher -right-> event_schema : creates
+subscriber -left-> event_schema : processes
+
+@enduml

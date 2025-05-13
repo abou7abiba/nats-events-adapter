@@ -1,0 +1,60 @@
+@startuml
+!theme plain
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+
+participant "File System" as FS
+participant "File Listener" as FL
+participant "NATS Server" as NS
+participant "Monitor" as M
+participant "Log File" as LF
+
+== Initialization ==
+FL -> FL: Start file system observer
+FL -> NS: Connect to NATS Server
+FL -> NS: Ensure stream exists
+NS --> FL: Stream ready
+
+M -> NS: Connect to NATS Server
+M -> NS: Ensure stream exists
+M -> NS: Create durable consumer
+NS --> M: Consumer ready
+M -> NS: Pull subscribe to subject
+
+== File Addition Event ==
+FS -> FL: File created event
+activate FL
+FL -> FL: Calculate file size
+FL -> NS: Publish event to subject
+deactivate FL
+NS -> NS: Store event in stream
+
+M -> NS: Fetch messages
+NS --> M: Return file addition event
+activate M
+M -> M: Format log entry
+M -> LF: Write to log file
+M -> NS: Acknowledge message
+deactivate M
+
+== File Deletion Event ==
+FS -> FL: File deleted event
+activate FL
+FL -> NS: Publish event to subject
+deactivate FL
+NS -> NS: Store event in stream
+
+M -> NS: Fetch messages
+NS --> M: Return file deletion event
+activate M
+M -> M: Format log entry
+M -> LF: Write to log file
+M -> NS: Acknowledge message
+deactivate M
+
+== Shutdown ==
+FL -> FL: Stop file system observer
+FL -> NS: Close connection
+M -> NS: Close connection
+
+@enduml
