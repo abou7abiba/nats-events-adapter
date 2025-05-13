@@ -1,0 +1,10 @@
+name: new-pine
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pip
+  - pip:
+    - nats-py>=2.4.0
+    - watchdog>=3.0.0

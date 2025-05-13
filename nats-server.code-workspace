@@ -1,0 +1,11 @@
+{
+	"folders": [
+		{
+			"path": "../../../docker/nats-server"
+		},
+		{
+			"path": "."
+		}
+	],
+	"settings": {}
+}
