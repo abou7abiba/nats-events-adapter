@@ -1,0 +1,82 @@
+@startuml Storage Service Architecture - Deployment Diagram
+!theme plain
+title File Storage Service - Deployment Diagram
+
+node "User Devices" {
+  [Web Browser] as Browser
+}
+
+cloud "On-Premises / Private Cloud" {
+  node "Load Balancer Cluster" {
+    [Load Balancer] as LB
+  }
+  
+  node "API Gateway Cluster" {
+    [API Gateway] as Gateway
+    [Authentication Service] as Auth
+  }
+  
+  node "Microservices Cluster" {
+    [Upload Service] as UploadService #LightGreen
+    [File Processing Service] as ProcessingService #LightGreen
+    [Storage Service] as StorageService #LightGreen
+  }
+  
+  node "Message Queue Cluster" {
+    [NATS Server 1] as NATS1
+    [NATS Server 2] as NATS2
+    [NATS Server 3] as NATS3
+  }
+  
+  node "Database Cluster" {
+    [Metadata Database Primary] as DBPrimary
+    [Metadata Database Replica] as DBReplica
+  }
+  
+  node "Monitoring & Logging" {
+    [Prometheus] as Prometheus
+    [Grafana] as Grafana
+    [ELK Stack] as ELK
+  }
+}
+
+cloud "Cloud Provider" {
+  [Object Storage Service] as CloudStorage
+}
+
+Browser --> LB : HTTPS
+LB --> Gateway : HTTPS
+Gateway --> Auth : HTTP/gRPC
+Gateway --> UploadService : HTTP/gRPC
+UploadService --> NATS1 : TCP
+UploadService --> NATS2 : TCP
+UploadService --> NATS3 : TCP
+ProcessingService --> NATS1 : TCP
+ProcessingService --> NATS2 : TCP
+ProcessingService --> NATS3 : TCP
+UploadService --> StorageService : HTTP/gRPC
+ProcessingService --> StorageService : HTTP/gRPC
+StorageService --> DBPrimary : TCP
+DBPrimary --> DBReplica : TCP
+StorageService --> CloudStorage : HTTPS
+
+Gateway -down-> Prometheus : Metrics
+UploadService -down-> Prometheus : Metrics
+ProcessingService -down-> Prometheus : Metrics
+StorageService -down-> Prometheus : Metrics
+NATS1 -down-> Prometheus : Metrics
+NATS2 -down-> Prometheus : Metrics
+NATS3 -down-> Prometheus : Metrics
+DBPrimary -down-> Prometheus : Metrics
+DBReplica -down-> Prometheus : Metrics
+
+Prometheus --> Grafana : Metrics
+Gateway -down-> ELK : Logs
+UploadService -down-> ELK : Logs
+ProcessingService -down-> ELK : Logs
+StorageService -down-> ELK : Logs
+NATS1 -down-> ELK : Logs
+NATS2 -down-> ELK : Logs
+NATS3 -down-> ELK : Logs
+
+@enduml

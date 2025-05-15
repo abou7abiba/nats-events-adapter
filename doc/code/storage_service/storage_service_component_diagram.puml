@@ -1,0 +1,49 @@
+@startuml Storage Service Architecture - Component Diagram
+!define RECTANGLE class
+
+skinparam component {
+  BackgroundColor<<UI>> LightBlue
+  BackgroundColor<<API>> LightGreen
+  BackgroundColor<<Service>> LightYellow
+  BackgroundColor<<Queue>> LightPink
+  BackgroundColor<<Storage>> LightGray
+  BorderColor Black
+  ArrowColor Black
+}
+
+title "File Storage Service - Component Diagram"
+
+' Main Components
+component "Web UI" as UI <<UI>>
+component "API Gateway" as Gateway <<API>>
+component "Authentication Service" as Auth <<Service>>
+component "Upload Service" as UploadService <<Service>>
+component "File Processing Service" as ProcessingService <<Service>>
+component "Storage Service" as StorageService <<Service>>
+component "NATS Message Queue" as NatsQueue <<Queue>>
+component "Object Storage" as ObjectStorage <<Storage>> #LightGray
+component "Metadata Database" as MetadataDB <<Storage>>
+component "Monitoring & Logging" as Monitoring <<Service>>
+
+' Connections
+UI -> Gateway : "1. File Upload Request"
+Gateway -> Auth : "2. Authenticate & Authorize"
+Gateway -> UploadService : "3. Forward Upload"
+UploadService -> NatsQueue : "4. Publish Upload Event"
+UploadService -> StorageService : "5. Stream Large File Chunks"
+ProcessingService -> NatsQueue : "6. Subscribe to Events"
+ProcessingService -> StorageService : "7. Process Files"
+StorageService -> ObjectStorage : "8. Store File Data"
+StorageService -> MetadataDB : "9. Store Metadata"
+UI --> StorageService : "10. Download Files"
+
+' All services connect to monitoring
+Monitoring <-- UI : "Log & Metrics"
+Monitoring <-- Gateway : "Log & Metrics"
+Monitoring <-- Auth : "Log & Metrics"
+Monitoring <-- UploadService : "Log & Metrics"
+Monitoring <-- ProcessingService : "Log & Metrics"
+Monitoring <-- StorageService : "Log & Metrics"
+Monitoring <-- NatsQueue : "Log & Metrics"
+
+@enduml

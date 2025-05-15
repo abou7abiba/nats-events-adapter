@@ -1,0 +1,101 @@
+@startuml Storage Service Architecture - Scalability Diagram
+!theme plain
+title File Storage Service - Scalability Model
+
+rectangle "Client Side" as Client {
+  [Web UI]
+  [Chunking & Presigned URL System]
+}
+
+rectangle "API Layer" as API {
+  [Load Balancer] as LB
+  [API Gateway 1] as G1
+  [API Gateway 2] as G2
+  [API Gateway N] as GN
+  LB --> G1
+  LB --> G2
+  LB --> GN
+}
+
+rectangle "Ingestion Layer" as Ingestion {
+  [Upload Service 1] as U1
+  [Upload Service 2] as U2
+  [Upload Service N] as UN
+  G1 --> U1
+  G1 --> U2
+  G2 --> U2
+  G2 --> UN
+  GN --> U1
+  GN --> UN
+}
+
+rectangle "Message Broker" as Queue {
+  [NATS Server Cluster]
+}
+
+rectangle "Processing Layer" as Processing {
+  [Processing Service 1] as P1
+  [Processing Service 2] as P2
+  [Processing Service N] as PN
+}
+
+rectangle "Storage Layer" as Storage {
+  [Storage Service 1] as S1
+  [Storage Service 2] as S2
+  [Storage Service N] as SN
+}
+
+rectangle "Databases" as DB {
+  [Metadata DB Cluster]
+}
+
+cloud "Cloud Storage" as Cloud {
+  [Object Storage]
+}
+
+U1 --> Queue
+U2 --> Queue
+UN --> Queue
+
+Queue --> P1
+Queue --> P2
+Queue --> PN
+
+U1 --> S1
+U2 --> S2
+UN --> SN
+
+P1 --> S1
+P2 --> S2
+PN --> SN
+
+S1 --> DB
+S2 --> DB
+SN --> DB
+
+S1 --> Cloud
+S2 --> Cloud
+SN --> Cloud
+
+note bottom of Ingestion
+  Auto-scaling based on:
+  - Concurrent connections
+  - CPU usage
+  - Memory usage
+endnote
+
+note bottom of Processing
+  Auto-scaling based on:
+  - Queue depth
+  - Processing backlog
+  - CPU usage
+endnote
+
+note bottom of Storage
+  Auto-scaling based on:
+  - I/O operations
+  - Storage throughput
+  - Connection count
+endnote
+
+@enduml
