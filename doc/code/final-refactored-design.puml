@@ -1,0 +1,109 @@
+@startuml "Final Refactored NATS Implementation"
+
+' Style definitions
+skinparam classAttributeIconSize 0
+skinparam backgroundColor white
+skinparam class {
+    BackgroundColor LightBlue
+    ArrowColor DarkBlue
+    BorderColor DarkBlue
+}
+skinparam note {
+    BackgroundColor LightYellow
+    BorderColor DarkGray
+}
+
+' The NatsClient class - our new abstraction
+class NatsClient {
+    -server_url: string
+    -client_name: string
+    -nc: NATS connection
+    -js: JetStream context
+    -options: dict
+    
+    +__init__(server_url, client_name)
+    +connect(max_retries, retry_delay): bool
+    +ensure_stream(stream_name, subjects): bool
+    +ensure_consumer(stream_name, consumer_name, config): bool
+    +publish(subject, data): bool
+    +subscribe(subject, consumer_name): Subscription
+    +fetch_messages(subscription, batch_size, timeout): List[Message]
+    +close(): void
+    +is_connected(): bool
+}
+
+' FileEventHandler class from file_listener.py
+class FileEventHandler {
+    -nats_client: NatsClient
+    +__init__(nats_client)
+    +on_created(event)
+    +on_deleted(event)
+    -_process_file_event(file_path, operation)
+    -_send_event(file_info)
+}
+
+' Observer class from watchdog (external)
+class Observer {
+    +schedule(event_handler, path, recursive)
+    +start()
+    +stop()
+    +join()
+}
+
+' Subscription class (now accessed through NatsClient)
+class Subscription {
+    +fetch(batch_size, timeout)
+}
+
+' Message class
+class Message {
+    +data: bytes
+    +ack()
+}
+
+' Definitions for the module functions
+note as FileListenerFunctions
+  file_listener.py functions
+  --
+  signal_handler(sig, frame)
+  main()
+end note
+
+note as MonitorFunctions
+  monitor.py functions
+  --
+  log_event(event_data)
+  process_messages(nats_client)
+  signal_handler(sig, frame)
+  main()
+end note
+
+' Config module (not a class but important for the diagram)
+note as ConfigNote
+  Configuration Module (config.py)
+  --
+  NATS_SERVER
+  SUBJECT
+  STREAM_NAME
+  CONSUMER_NAME
+  STORAGE_DIR
+  MONITOR_DIR
+  LOG_FILE
+  JS_CONFIG
+  LOG_FORMAT
+  DATE_FORMAT
+end note
+
+' Relationships
+FileEventHandler "1" -- "1" NatsClient : uses
+FileListenerFunctions ..> NatsClient : creates and uses
+FileListenerFunctions ..> FileEventHandler : creates
+FileListenerFunctions ..> Observer : creates and uses
+MonitorFunctions ..> NatsClient : creates and uses
+NatsClient "1" -- "*" Subscription : creates
+Subscription "1" -- "*" Message : receives
+ConfigNote ..> NatsClient : configures
+ConfigNote ..> FileListenerFunctions : configures
+ConfigNote ..> MonitorFunctions : configures
+
+@enduml

@@ -5,6 +5,9 @@
 		},
 		{
 			"path": "."
+		},
+		{
+			"path": "../../../Git/dxwand-space/eventbus"
 		}
 	],
 	"settings": {}

@@ -1,0 +1,115 @@
+@startuml "Current NATS Implementation"
+
+' Style definitions
+skinparam classAttributeIconSize 0
+skinparam backgroundColor white
+skinparam class {
+    BackgroundColor LightBlue
+    ArrowColor DarkBlue
+    BorderColor DarkBlue
+}
+skinparam note {
+    BackgroundColor LightYellow
+    BorderColor DarkGray
+}
+
+' FileEventHandler class from file_listener.py
+class FileEventHandler {
+    -nats_client: NATS
+    +__init__(nats_client)
+    +on_created(event)
+    +on_deleted(event)
+    -_process_file_event(file_path, operation)
+    -_send_event(file_info)
+}
+
+' Observer class from watchdog (external)
+class Observer {
+    +schedule(event_handler, path, recursive)
+    +start()
+    +stop()
+    +join()
+}
+
+' NATS Client (currently used directly in both modules)
+class "NATS Client" as NatsClient {
+    -servers: List[str]
+    -connect_timeout: int
+    -reconnect_time_wait: int
+    -max_reconnect_attempts: int
+    -name: str
+    +connect()
+    +jetstream()
+    +publish(subject, data)
+    +close()
+}
+
+' JetStream class (part of NATS)
+class JetStream {
+    +add_stream(name, subjects)
+    +stream_info(name)
+    +add_consumer(stream_name, consumer_config)
+    +consumer_info(stream_name, consumer_name)
+    +pull_subscribe(subject, consumer_name)
+}
+
+' Subscription class from NATS
+class Subscription {
+    +fetch(batch_size, timeout)
+    +ack()
+}
+
+' Message class
+class Message {
+    +data: bytes
+    +ack()
+}
+
+' Config module (not a class but important for the diagram)
+note as ConfigNote
+  Configuration Module (config.py)
+  --
+  NATS_SERVER
+  SUBJECT
+  STREAM_NAME
+  CONSUMER_NAME
+  STORAGE_DIR
+  MONITOR_DIR
+  LOG_FILE
+  JS_CONFIG
+  LOG_FORMAT
+  DATE_FORMAT
+end note
+
+' file_listener.py functions
+note as FileListenerFunctions
+  file_listener.py functions
+  --
+  run_nats_client()
+  signal_handler()
+  main()
+end note
+
+' monitor.py functions
+note as MonitorFunctions
+  monitor.py functions
+  --
+  setup_jetstream()
+  log_event()
+  process_messages()
+  signal_handler()
+  main()
+end note
+
+' Relationships
+FileEventHandler "1" -- "1" NatsClient : uses
+Observer "1" -- "1" FileEventHandler : monitors with
+NatsClient "1" -- "1" JetStream : provides
+JetStream "1" -- "*" Subscription : creates
+Subscription "1" -- "*" Message : receives
+FileEventHandler ..> FileListenerFunctions : defined in same module
+MonitorFunctions ..> NatsClient : creates and uses
+MonitorFunctions ..> JetStream : uses
+FileListenerFunctions ..> NatsClient : creates and uses
+
+@enduml
