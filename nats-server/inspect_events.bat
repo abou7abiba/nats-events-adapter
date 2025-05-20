@@ -64,33 +64,39 @@ if /i "%COMMAND%"=="help" goto :help
 :: Parse options (arguments after the command)
 shift
 :parse_args
-if "%~1"=="" goto :execute_command
+if "%1"=="" goto :execute_command
 
-set ARG=%~1
+set ARG=%1
+
 set PREFIX=%ARG:~0,9%
-if "%PREFIX%"=="--stream=" (
-    set STREAM_NAME=%ARG:~9%
+if "%PREFIX%"=="--stream" (
+    shift
+    call set STREAM_NAME=%%1
     shift
     goto :parse_args
 )
 
 set PREFIX=%ARG:~0,9%
-if "%PREFIX%"=="--server=" (
-    set NATS_SERVER=%ARG:~9%
+if "%PREFIX%"=="--server" (
+    shift
+    ::set NATS_SERVER=%ARG:~9%
+    call set NATS_SERVER=%%1
     shift
     goto :parse_args
 )
 
 set PREFIX=%ARG:~0,11%
-if "%PREFIX%"=="--consumer=" (
-    set CONSUMER=%ARG:~11%
+if "%PREFIX%"=="--consumer" (
+    shift
+    call set CONSUMER=%%1
     shift
     goto :parse_args
 )
 
 set PREFIX=%ARG:~0,10%
-if "%PREFIX%"=="--subject=" (
-    set SUBJECT=%ARG:~10%
+if "%PREFIX%"=="--subject" (
+    shift
+    call set SUBJECT=%%1
     shift
     goto :parse_args
 )
@@ -152,6 +158,7 @@ if %USE_LOCAL_CLI%==true (
     nats stream info %STREAM_NAME% --server=%NATS_SERVER%
 ) else (
     :: Use the nats-box container
+    echo DEBUG: docker exec %NATS_BOX_CONTAINER% nats stream info %STREAM_NAME% --server=%NATS_SERVER%
     docker exec %NATS_BOX_CONTAINER% nats stream info %STREAM_NAME% --server=%NATS_SERVER%
 )
 goto :eof

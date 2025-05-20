@@ -8,7 +8,12 @@
 		},
 		{
 			"path": "../../../Git/dxwand-space/eventbus"
+		},
+		{
+			"path": "../../../Git/dxwand-space/topics-analytics"
 		}
 	],
-	"settings": {}
+	"settings": {
+		"powershell.cwd": "eventbus"
+	}
 }
