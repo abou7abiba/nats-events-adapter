@@ -1,0 +1,59 @@
+@startuml Storage Service Architecture - Sequence Diagram
+!theme plain
+title File Upload - Sequence Diagram
+
+actor "User" as User
+participant "Web UI" as UI
+participant "API Gateway" as Gateway
+participant "Authentication Service" as Auth
+participant "Upload Service" as UploadService
+participant "NATS Queue" as NatsQueue
+participant "Storage Service" as StorageService
+participant "File Processing Service" as ProcessingService
+participant "Object Storage" as ObjectStorage
+participant "Metadata DB" as MetadataDB
+
+== Authentication Phase ==
+
+User -> UI: Access File Upload Interface
+UI -> Gateway: Request Authentication
+Gateway -> Auth: Validate Credentials
+Auth -> Gateway: Return Auth Token
+Gateway -> UI: Return Auth Token
+UI -> User: Display Upload Form
+
+== Upload Phase ==
+
+User -> UI: Select and Upload File
+note over UI: Generate upload ID
+UI -> UI: Split large file into chunks
+UI -> Gateway: Upload Request with Token
+Gateway -> Auth: Verify Token
+Auth -> Gateway: Token Valid
+Gateway -> UploadService: Forward Upload Request
+
+== Processing Phase ==
+
+UploadService -> UploadService: Validate Request
+UploadService -> StorageService: Stream File Chunks Directly
+StorageService -> ObjectStorage: Store File Chunks
+StorageService -> MetadataDB: Store Upload Metadata (Async)
+StorageService -> UploadService: Upload Confirmation
+UploadService -> NatsQueue: Publish Upload Event
+NatsQueue -> ProcessingService: Notify File Ready for Processing
+ProcessingService -> StorageService: Request File
+StorageService -> ObjectStorage: Retrieve File
+ObjectStorage -> StorageService: Return File
+StorageService -> ProcessingService: Return File
+ProcessingService -> ProcessingService: Process File (Virus Scan, Format Validation, etc.)
+ProcessingService -> MetadataDB: Update File Status
+ProcessingService -> NatsQueue: Publish Processing Complete Event
+
+== Confirmation Phase ==
+
+NatsQueue -> UploadService: Notify Processing Complete
+UploadService -> Gateway: Send Completion Status
+Gateway -> UI: Return Upload Status
+UI -> User: Display Upload Complete
+
+@enduml

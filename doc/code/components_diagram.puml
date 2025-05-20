@@ -1,0 +1,68 @@
+@startuml
+left to right direction
+skinparam componentStyle rectangle
+
+!define NATS_COLOR #85BBF0
+!define ADAPTER_COLOR #C9E7B7
+!define FILESYSTEM_COLOR #FFF8DC
+
+package "NATS Events Adapter" as adapter <<Rectangle>>{
+  [File Listener] as file_listener
+  [Monitor] as monitor
+  [Configuration] as config
+  [Telemetry Module] as telemetry
+}
+
+package "NATS Server" as nats_server <<Rectangle>> {
+  database "JetStream Storage" as jetstream {
+    [Streams]
+    [Consumers]
+  }
+  [NATS Broker] as nats_broker
+}
+
+cloud "File System" as filesystem {
+  folder "Monitored Directory" as monitored_dir
+  file "Log File" as log_file
+}
+
+' Relationships
+file_listener --> config : reads configuration
+file_listener --> monitored_dir : watches for changes
+file_listener --> nats_broker : publishes events
+file_listener ..> telemetry : uses (optional)
+
+monitor --> config : reads configuration
+monitor --> nats_broker : subscribes to events
+monitor --> log_file : writes event logs
+monitor ..> telemetry : uses (optional)
+
+nats_broker --> jetstream : stores messages
+jetstream --> nats_broker : delivers messages
+
+note right of file_listener
+  Watches directory for file
+  changes and publishes events
+  to NATS with path, operation,
+  and file size information
+end note
+
+note right of monitor
+  Subscribes to file events from
+  NATS JetStream and logs them
+  to a file with timestamp
+end note
+
+note bottom of jetstream
+  Provides persistent storage for events,
+  ensuring delivery even if components
+  are temporarily offline
+end note
+
+note bottom of telemetry
+  Provides OpenTelemetry tracing
+  for monitoring and diagnostics
+  (work in progress)
+end note
+
+@enduml

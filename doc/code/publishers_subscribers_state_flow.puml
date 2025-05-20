@@ -1,0 +1,83 @@
+@startuml
+' left to right direction
+
+!theme plain
+skinparam backgroundColor white
+skinparam stateBorderColor #5D6D7E
+skinparam stateBackgroundColor #EBF5FB
+skinparam stateFontStyle bold
+skinparam arrowColor #3498DB
+
+title File Event Flow Through the System
+
+state "File System" as FS {
+  state "File Added" as FileAdded #D5F5E3
+  state "File Deleted" as FileDeleted #FADBD8
+}
+
+state "File Listener (Publisher)" as Publisher {
+  state "Detect Change" as DetectChange
+  state "Create Event" as CreateEvent
+  state "Publish Message" as PublishMessage
+}
+
+state "NATS JetStream (Message Bus)" as MessageBus {
+  state "Stream: FILES" as Stream {
+    state "Subject: file.events" as Subject
+  }
+}
+
+state "Monitor (Subscriber)" as Subscriber {
+  state "Retrieve Message" as RetrieveMessage
+  state "Process Event" as ProcessEvent 
+  state "Log Event" as LogEvent
+  state "Acknowledge Message" as AckMessage
+}
+
+' File addition flow
+FileAdded -right-> DetectChange
+DetectChange -down-> CreateEvent : path, timestamp, size
+CreateEvent -right-> PublishMessage
+PublishMessage -right-> Subject : JSON payload
+Subject -right-> RetrieveMessage
+RetrieveMessage -down-> ProcessEvent
+ProcessEvent -down-> LogEvent : format log entry
+LogEvent -right-> AckMessage
+AckMessage -up[hidden]-> RetrieveMessage
+
+' File deletion flow (simplified to show only the differences)
+FileDeleted -right-> DetectChange
+note on link
+  Same flow as file addition but
+  with "deleted" operation and 
+  file_size = 0
+end note
+
+note bottom of FileAdded
+  Physical file creation 
+  triggers Watchdog event
+end note
+
+note bottom of FileDeleted
+  Physical file deletion
+  triggers Watchdog event
+end note
+
+note bottom of Subject
+  JSON Message Format:
+  {
+    "path": "/path/to/file",
+    "operation": "added"|"deleted",
+    "file_size": size_in_kb,
+    "timestamp": unix_timestamp
+  }
+end note
+
+note bottom of LogEvent
+  Writes to log file:
+  [timestamp] File ADDED: path, Size: file_size KB
+  or
+  [timestamp] File DELETED: path, Size: 0.00 KB
+end note
+
+@enduml

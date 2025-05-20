@@ -1,0 +1,121 @@
+@startuml "Refactored NATS Implementation"
+
+' Style definitions
+skinparam classAttributeIconSize 0
+skinparam backgroundColor white
+skinparam class {
+    BackgroundColor LightBlue
+    ArrowColor DarkBlue
+    BorderColor DarkBlue
+}
+skinparam note {
+    BackgroundColor LightYellow
+    BorderColor DarkGray
+}
+
+' NatsClient class (new extracted class)
+class NatsClient {
+    -nc: NATS Connection
+    -js: JetStream
+    -servers: List[str]
+    -connect_timeout: int
+    -reconnect_time_wait: int
+    -max_reconnect_attempts: int
+    -name: str
+    -is_connected: bool
+    
+    +__init__(name, servers)
+    +connect(): bool
+    +ensure_stream(stream_name, subjects): bool
+    +ensure_consumer(stream_name, consumer_name, config): bool
+    +publish(subject, data): bool
+    +subscribe(subject, consumer_name): Subscription
+    +fetch_messages(subscription, batch_size, timeout): List[Message]
+    +close()
+    +is_connected(): bool
+}
+
+' FileEventHandler class from file_listener.py
+class FileEventHandler {
+    -nats_client: NatsClient
+    +__init__(nats_client)
+    +on_created(event)
+    +on_deleted(event)
+    -_process_file_event(file_path, operation)
+    -_send_event(file_info)
+}
+
+' Observer class from watchdog (external)
+class Observer {
+    +schedule(event_handler, path, recursive)
+    +start()
+    +stop()
+    +join()
+}
+
+' Subscription class
+class Subscription {
+    +fetch(batch_size, timeout)
+}
+
+' Message class
+class Message {
+    +data: bytes
+    +ack()
+}
+
+' FilePublisher class (new class for file_listener.py)
+class FilePublisher {
+    -nats_client: NatsClient
+    -observer: Observer
+    -event_handler: FileEventHandler
+    -shutdown_requested: bool
+    
+    +__init__()
+    +start()
+    +stop()
+    -setup_observer()
+    -signal_handler()
+}
+
+' FileMonitor class (new class for monitor.py)
+class FileMonitor {
+    -nats_client: NatsClient
+    -subscription: Subscription
+    -shutdown_requested: bool
+    
+    +__init__()
+    +start()
+    +stop()
+    -process_messages()
+    -log_event(event_data)
+    -signal_handler()
+}
+
+' Config module (not a class but important for the diagram)
+note as ConfigNote
+  Configuration Module (config.py)
+  --
+  NATS_SERVER
+  SUBJECT
+  STREAM_NAME
+  CONSUMER_NAME
+  STORAGE_DIR
+  MONITOR_DIR
+  LOG_FILE
+  JS_CONFIG
+  LOG_FORMAT
+  DATE_FORMAT
+end note
+
+' Relationships
+FilePublisher "1" *-- "1" NatsClient : uses
+FilePublisher "1" *-- "1" FileEventHandler : uses
+FilePublisher "1" *-- "1" Observer : uses
+FileMonitor "1" *-- "1" NatsClient : uses
+FileEventHandler "1" -- "1" NatsClient : uses
+NatsClient "1" -- "*" Subscription : creates
+Subscription "1" -- "*" Message : receives
+FileMonitor "1" -- "1" Subscription : uses
+
+@enduml

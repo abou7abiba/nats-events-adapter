@@ -1,0 +1,86 @@
+@startuml Storage Service Architecture - Security Diagram
+!theme plain
+title File Storage Service - Security Architecture
+
+actor "User" as User
+rectangle "Edge Security" {
+  [Web Application Firewall] as WAF
+  [DDoS Protection] as DDoS
+  [TLS Termination] as TLS
+  [Rate Limiting] as Rate
+}
+
+rectangle "Authentication & Authorization" {
+  [Identity Provider] as IDP
+  [OAuth/OIDC Service] as OAuth
+  [API Gateway] as Gateway
+  [Token Validation] as Token
+  [Role-Based Access Control] as RBAC
+}
+
+rectangle "Application Security" {
+  [Input Validation] as Input
+  [Anti-Virus Scanning] as AV
+  [Content Validation] as Content
+  [Audit Logging] as Audit
+}
+
+rectangle "Data Security" {
+  [Encryption at Rest] as EncRest
+  [Encryption in Transit] as EncTransit
+  [Data Classification] as Class
+  [Retention Policy Engine] as Retention
+}
+
+rectangle "Infrastructure Security" {
+  [Network Segmentation] as Network
+  [Container Security] as Container
+  [Secret Management] as Secret
+  [Vulnerability Scanning] as Vuln
+}
+
+User --> WAF
+WAF --> DDoS
+DDoS --> TLS
+TLS --> Rate
+Rate --> IDP
+
+IDP --> OAuth
+OAuth --> Gateway
+Gateway --> Token
+Token --> RBAC
+
+RBAC --> Input
+Input --> AV
+AV --> Content
+Content --> Audit
+
+Audit --> EncRest
+EncRest --> EncTransit
+EncTransit --> Class
+Class --> Retention
+
+Retention --> Network
+Network --> Container
+Container --> Secret
+Secret --> Vuln
+
+note right of Retention
+  Automatic deletion after 30 days
+  Data lifecycle management
+  Legal hold capability
+endnote
+
+note right of EncRest
+  AES-256 encryption
+  Customer-managed encryption keys option
+  Secure key rotation
+endnote
+
+note right of AV
+  Real-time malware scanning
+  File type validation
+  Quarantine for suspicious files
+endnote
+
+@enduml

@@ -16,11 +16,9 @@ import sys
 import signal
 import traceback
 import platform
-import nats
-from nats.js.api import ConsumerConfig
-from nats.errors import TimeoutError, ConnectionClosedError, NoServersError
 
-# Import configuration
+# Import from our modules
+from .nats_client import NatsClient
 from .config import (
     NATS_SERVER, SUBJECT, STREAM_NAME, CONSUMER_NAME,
     MONITOR_DIR, LOG_FILE, LOG_FORMAT, DATE_FORMAT,
@@ -29,78 +27,6 @@ from .config import (
 
 # Flag to track when shutdown is requested
 shutdown_requested = False
-
-async def setup_jetstream():
-    """
-    Connect to NATS server and set up JetStream consumer.
-    
-    Returns:
-        tuple: (NATS connection, JetStream context)
-    """
-    # Connect to NATS server with retry
-    print(f"Connecting to NATS server at {NATS_SERVER}")
-    
-    # Connection options with improved timeout and reconnect settings
-    options = {
-        "servers": [NATS_SERVER],
-        "connect_timeout": 10,  # Increase timeout to 10 seconds
-        "reconnect_time_wait": 2,  # Wait 2 seconds before reconnection attempts
-        "max_reconnect_attempts": 5,  # Try to reconnect 5 times
-        "name": "file-events-monitor"  # Identify this client for monitoring
-    }
-    
-    retry_attempts = 0
-    max_retries = 3
-    retry_delay = 2  # seconds
-    
-    while retry_attempts < max_retries:
-        try:
-            nc = await nats.connect(**options)
-            print("Successfully connected to NATS server")
-            js = nc.jetstream()
-            
-            # Ensure stream exists
-            try:
-                await js.stream_info(STREAM_NAME)
-                print(f"Stream '{STREAM_NAME}' exists")
-            except nats.errors.Error:
-                # Create the stream if it doesn't exist
-                await js.add_stream(name=STREAM_NAME, subjects=[SUBJECT])
-                print(f"Created stream '{STREAM_NAME}' with subject {SUBJECT}")
-            
-            # Create a durable consumer if it doesn't exist
-            consumer_config = ConsumerConfig(
-                durable_name=CONSUMER_NAME,
-                ack_policy=JS_CONFIG["ack_policy"],
-                deliver_policy=JS_CONFIG["deliver_policy"]
-            )
-            
-            try:
-                await js.consumer_info(STREAM_NAME, CONSUMER_NAME)
-                print(f"Consumer '{CONSUMER_NAME}' exists")
-            except nats.errors.Error:
-                await js.add_consumer(STREAM_NAME, consumer_config)
-                print(f"Created consumer '{CONSUMER_NAME}'")
-            
-            return nc, js
-            
-        except (TimeoutError, ConnectionClosedError, NoServersError) as e:
-            retry_attempts += 1
-            if retry_attempts < max_retries:
-                print(f"Failed to connect: {e}. Retrying in {retry_delay} seconds... (Attempt {retry_attempts}/{max_retries})")
-                await asyncio.sleep(retry_delay)
-                # Increase the delay for next retry (exponential backoff)
-                retry_delay *= 2
-            else:
-                print(f"Failed to connect after {max_retries} attempts: {e}")
-                print("Please make sure the NATS server is running and accessible.")
-                print(f"Server URL: {NATS_SERVER}")
-                # Exit with error
-                sys.exit(1)
-        except Exception as e:
-            print(f"Unexpected error connecting to NATS: {e}")
-            sys.exit(1)
-
 
 def log_event(event_data):
     """
@@ -130,7 +56,7 @@ def log_event(event_data):
     print(f"Logged event: {log_entry.strip()}")
 
 
-async def process_messages(js):
+async def process_messages(nats_client):
     """
     Process messages from the NATS JetStream.
     
@@ -138,10 +64,13 @@ async def process_messages(js):
     processes them, and acknowledges receipt.
     
     Args:
-        js: JetStream context
+        nats_client: NatsClient instance
     """
     # Subscribe to the subject with the durable consumer
-    subscription = await js.pull_subscribe(SUBJECT, CONSUMER_NAME)
+    subscription = await nats_client.subscribe(SUBJECT, CONSUMER_NAME)
+    if subscription is None:
+        print(f"Failed to subscribe to {SUBJECT}. Exiting.")
+        return
     
     print(f"Monitoring for file events on subject: {SUBJECT}")
     print(f"Logging to: {LOG_FILE}")
@@ -150,7 +79,7 @@ async def process_messages(js):
     while not shutdown_requested:
         try:
             # Fetch messages (with a timeout)
-            messages = await subscription.fetch(1, timeout=1)
+            messages = await nats_client.fetch_messages(subscription, 1, timeout=1)
             
             for message in messages:
                 try:
@@ -172,20 +101,10 @@ async def process_messages(js):
                     traceback.print_exc()
                     await message.ack()  # Acknowledge to avoid reprocessing
         
-        except nats.errors.TimeoutError:
-            # This is normal when no messages are available
-            # Just wait a bit and try again
-            if not shutdown_requested:
-                await asyncio.sleep(0.5)
         except asyncio.CancelledError:
             # Handle task cancellation gracefully
             print("Task cancelled, shutting down...")
             break
-        except nats.errors.ConnectionClosedError as e:
-            if not shutdown_requested:
-                print(f"Connection closed: {e}. Attempting to reconnect...")
-                # Break from the loop, which will trigger reconnection in main()
-                return
         except Exception as e:
             if not shutdown_requested:
                 print(f"Unexpected error: {e}")
@@ -214,34 +133,58 @@ async def main():
         loop = asyncio.get_running_loop()
         for sig in (signal.SIGINT, signal.SIGTERM):
             loop.add_signal_handler(sig, signal_handler)
-    
-    nc = None
+      # Create client instance once outside the loop
+    nats_client = NatsClient(NATS_SERVER, "file-events-monitor")
     try:
         while not shutdown_requested:
             try:
-                # Setup JetStream
-                nc, js = await setup_jetstream()
+                # Connect to NATS if not already connected
+                if not nats_client.is_connected():
+                    connected = await nats_client.connect()
+                    
+                    if not connected:
+                        print("Failed to connect to NATS server. Waiting to retry...")
+                        await asyncio.sleep(2)
+                        continue
+                
+                # Ensure stream exists
+                stream_created = await nats_client.ensure_stream(STREAM_NAME, [SUBJECT])
+                if not stream_created:
+                    print("Failed to create stream. Waiting to retry...")
+                    await asyncio.sleep(2)
+                    continue
+                
+                # Ensure consumer exists
+                consumer_created = await nats_client.ensure_consumer(STREAM_NAME, CONSUMER_NAME, JS_CONFIG)
+                if not consumer_created:
+                    print("Failed to create consumer. Waiting to retry...")
+                    await asyncio.sleep(2)
+                    continue
                 
                 # Process messages
-                await process_messages(js)
-                
-                # If process_messages returns and no shutdown was requested,
+                await process_messages(nats_client)
+                  # If process_messages returns and no shutdown was requested,
                 # there may have been a connection issue
                 if not shutdown_requested:
                     print("Connection to NATS server lost. Attempting to reconnect...")
+                    # Close the connection if it's still active
+                    if nats_client.is_connected():
+                        await nats_client.close()
                     await asyncio.sleep(2)  # Wait before attempting to reconnect
                 
             except Exception as e:
                 if not shutdown_requested:
                     print(f"Unexpected error in main loop: {e}")
-                    await asyncio.sleep(2)  # Wait before attempting to reconnect
-    except asyncio.CancelledError:
+                    # Close the connection if it's still active
+                    if nats_client.is_connected():
+                        await nats_client.close()
+                    await asyncio.sleep(2)  # Wait before attempting to reconnect    except asyncio.CancelledError:
         print("Main task cancelled")
     finally:
         # Ensure proper cleanup of NATS connection
-        if nc is not None and nc.is_connected:
+        if nats_client.is_connected():
             print("Closing NATS connection...")
-            await nc.close()
+            await nats_client.close()
         print("Monitor shutdown complete")
 
 

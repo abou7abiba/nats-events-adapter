@@ -1,6 +1,11 @@
 # Test storage directory
 test/storage/
 
+# add nats-server data directory to the gitignore
+# NATS server data directory
+nats-server/data/
+
+
 # Python byte-compiled files
 __pycache__/
 *.py[cod]

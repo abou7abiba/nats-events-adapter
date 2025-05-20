@@ -17,10 +17,9 @@ import traceback
 import platform
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
-import nats
-from nats.errors import TimeoutError, ConnectionClosedError, NoServersError
 
-# Import configuration
+# Import from our modules
+from .nats_client import NatsClient
 from .config import (
     NATS_SERVER, SUBJECT, STREAM_NAME, 
     STORAGE_DIR
@@ -43,7 +42,7 @@ class FileEventHandler(FileSystemEventHandler):
         Initialize the event handler with a NATS client.
         
         Args:
-            nats_client: An active NATS client connection
+            nats_client: An instance of NatsClient
         """
         self.nats_client = nats_client
         super().__init__()
@@ -119,74 +118,15 @@ class FileEventHandler(FileSystemEventHandler):
         """
         try:
             # Publish the event as JSON data
-            await self.nats_client.publish(SUBJECT, json.dumps(file_info).encode())
-            print(f"Event published to {SUBJECT}")
+            success = await self.nats_client.publish(SUBJECT, file_info)
+            if success:
+                print(f"Event published to {SUBJECT}")
+            else:
+                print(f"Failed to publish event to {SUBJECT}")
         except Exception as e:
             print(f"Error publishing event: {e}")
             print("\nDetailed error information:")
             traceback.print_exc()
-
-
-async def run_nats_client():
-    """
-    Connect to NATS server and set up JetStream.
-    
-    Returns:
-        An active NATS client connection
-    """
-    # Connect to NATS server with retry
-    print(f"Connecting to NATS server at {NATS_SERVER}")
-    
-    # Connection options with improved timeout and reconnect settings
-    options = {
-        "servers": [NATS_SERVER],
-        "connect_timeout": 10,  # Increase timeout to 10 seconds
-        "reconnect_time_wait": 2,  # Wait 2 seconds before reconnection attempts
-        "max_reconnect_attempts": 5,  # Try to reconnect 5 times
-        "name": "file-events-publisher"  # Identify this client for monitoring
-    }
-    
-    retry_attempts = 0
-    max_retries = 3
-    retry_delay = 2  # seconds
-    
-    while retry_attempts < max_retries:
-        try:
-            nc = await nats.connect(**options)
-            print("Successfully connected to NATS server")
-            
-            # Access JetStream context
-            js = nc.jetstream()
-            
-            # Create a stream if it doesn't exist
-            try:
-                # Attempt to create the stream
-                await js.add_stream(name=STREAM_NAME, subjects=[SUBJECT])
-                print(f"Created stream '{STREAM_NAME}' with subject {SUBJECT}")
-            except nats.errors.Error as e:
-                # Stream might already exist, which is OK
-                print(f"Stream setup info: {e}")
-            
-            return nc
-            
-        except (TimeoutError, ConnectionClosedError, NoServersError) as e:
-            retry_attempts += 1
-            if retry_attempts < max_retries:
-                print(f"Failed to connect: {e}. Retrying in {retry_delay} seconds... (Attempt {retry_attempts}/{max_retries})")
-                await asyncio.sleep(retry_delay)
-                # Increase the delay for next retry (exponential backoff)
-                retry_delay *= 2
-            else:
-                print(f"Failed to connect after {max_retries} attempts: {e}")
-                print("Please make sure the NATS server is running and accessible.")
-                print(f"Server URL: {NATS_SERVER}")
-                # Exit with error
-                sys.exit(1)
-        except Exception as e:
-            print(f"Unexpected error connecting to NATS: {e}")
-            print("\nDetailed error information:")
-            traceback.print_exc()
-            sys.exit(1)
 
 
 def signal_handler(sig, frame):
@@ -211,15 +151,26 @@ async def main():
     
     print(f"Starting file listener for directory: {STORAGE_DIR}")
     
-    nc = None
+    nats_client = None
     observer = None
     
     try:
-        # Connect to NATS
-        nc = await run_nats_client()
+        # Create and connect to NATS
+        nats_client = NatsClient(NATS_SERVER, "file-events-publisher")
+        connected = await nats_client.connect()
+        
+        if not connected:
+            print("Failed to connect to NATS server. Exiting.")
+            return
+        
+        # Ensure stream exists
+        stream_created = await nats_client.ensure_stream(STREAM_NAME, [SUBJECT])
+        if not stream_created:
+            print("Failed to create stream. Exiting.")
+            return
         
         # Set up the watchdog observer
-        event_handler = FileEventHandler(nc)
+        event_handler = FileEventHandler(nats_client)
         observer = Observer()
         observer.schedule(event_handler, STORAGE_DIR, recursive=True)
         observer.start()
@@ -247,9 +198,9 @@ async def main():
             print("Observer stopped")
         
         # Close NATS connection
-        if nc is not None and nc.is_connected:
+        if nats_client is not None and nats_client.is_connected():
             print("Closing NATS connection...")
-            await nc.close()
+            await nats_client.close()
             print("NATS connection closed")
         
         print("Shutdown complete")
