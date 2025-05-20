@@ -38,3 +38,6 @@ htmlcov/
 # OS specific files
 .DS_Store
 Thumbs.db
+
+# VS Code workspace files
+*.code-workspace
