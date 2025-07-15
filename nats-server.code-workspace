@@ -11,6 +11,21 @@
 		},
 		{
 			"path": "../../../Git/dxwand-space/topics-analytics"
+		},
+		{
+			"path": "../../../Git/dxwand-space/control-subscription"
+		},
+		{
+			"path": "../../../Git/dxwand-space/dxwand-commons"
+		},
+		{
+			"path": "../../../Git/dxwand-space/control-billing"
+		},
+		{
+			"path": "../../../Git/dxwand-space/killbill-poc"
+		},
+		{
+			"path": "../../../Git/dxwand-space/dxwand-platform-architecture"
 		}
 	],
 	"settings": {
